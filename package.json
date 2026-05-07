@@ -1,7 +1,7 @@
 {
-  "name": "timeline",
+  "name": "explorer",
   "version": "0.1.0",
-  "homepage": "https://candidspaces.github.io/timeline",
+  "homepage": "https://candidspaces.github.io/explorer",
   "private": true,
   "dependencies": {
     "@ionic/react": "^8.5.4",
