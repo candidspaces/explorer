@@ -1,11 +1,5 @@
 import {
   IonButton,
-  IonCard,
-  IonCardContent,
-  IonCardHeader,
-  IonCardSubtitle,
-  IonCardTitle,
-  IonModal,
   IonText,
 } from '@ionic/react';
 import { PageShell } from '../components/pageShell';
@@ -15,17 +9,10 @@ import DirTree, { LeafSelection } from '../components/dirTree';
 import MemoFeed, { FeedHandoff } from '../components/memoFeed';
 import { indexTransactionsToGraph } from '../utils/indexer';
 import { Transaction } from '../utils/appTypes';
+import { OpenLocationCode } from 'open-location-code';
 
-const OPEN_LOCATIONS = [
-  { name: 'San Francisco', plusCode: '849VQHFJ+X6', lat: 37.7749, lng: -122.4194, notes: 'Open maker meetup and downtown signal checks.' },
-  { name: 'New York City', plusCode: '87G8Q257+59', lat: 40.7128, lng: -74.006, notes: 'Open drop-in point near Lower Manhattan.' },
-  { name: 'Nairobi', plusCode: '6GCRPR6X+24', lat: -1.2921, lng: 36.8219, notes: 'Community garden and learning exchange location.' },
-  { name: 'Tokyo', plusCode: '8Q7XMM4M+P7', lat: 35.6762, lng: 139.6503, notes: 'Late-night collaboration node with reliable coverage.' },
-  { name: 'São Paulo', plusCode: '588MHC8Q+X5', lat: -23.5505, lng: -46.6333, notes: 'Open co-working venue for weekend events.' },
-  { name: 'Sydney', plusCode: '4RRH46J2+52', lat: -33.8688, lng: 151.2093, notes: 'Harbour-side meetup point and routing check.' },
-];
-
-type OpenLocation = (typeof OPEN_LOCATIONS)[number];
+const OLC = new OpenLocationCode();
+const PLUS_CODE_PATTERN = /^[23456789CFGHJMPQRVWX]{6,8}\+[23456789CFGHJMPQRVWX]{2,3}$/i;
 
 const toDisplayPath = (value: string) => {
   const trimmedValue = value.replace(/0+=+$/g, '');
@@ -50,6 +37,42 @@ const buildPathSegments = (value: string) => {
   });
 };
 
+const MapOverview = ({ plusCodes }: { plusCodes: string[] }) => {
+  const markers = useMemo(() => plusCodes.flatMap((plusCode) => {
+    try {
+      const decoded = OLC.decode(plusCode.toUpperCase());
+      return [{
+        plusCode,
+        lat: decoded.latitudeCenter,
+        lng: decoded.longitudeCenter,
+      }];
+    } catch {
+      return [];
+    }
+  }), [plusCodes]);
+
+  return (
+    <div style={{ border: '1px solid var(--ion-color-step-200)', borderRadius: 12, overflow: 'hidden', background: 'linear-gradient(180deg, #dff4ff 0%, #edf7e9 100%)' }}>
+      <div style={{ width: '100%', height: 240, position: 'relative' }}>
+        {markers.map((marker) => {
+          const left = ((marker.lng + 180) / 360) * 100;
+          const top = ((90 - marker.lat) / 180) * 100;
+          return (
+            <div key={marker.plusCode} style={{ position: 'absolute', left: `${left}%`, top: `${top}%`, transform: 'translate(-50%, -50%)', width: 12, height: 12, borderRadius: '50%', background: 'var(--ion-color-danger)', border: '2px solid white' }} title={marker.plusCode} />
+          );
+        })}
+      </div>
+      <div style={{ padding: 8 }}>
+        <IonText color="medium">
+          {markers.length > 0
+            ? `${markers.length} plus-code root segment${markers.length === 1 ? '' : 's'} mapped from tree roots.`
+            : 'No plus-code root segments found in the current tree.'}
+        </IonText>
+      </div>
+    </div>
+  );
+};
+
 const Explore = () => {
   const {
     graph,
@@ -62,16 +85,29 @@ const Explore = () => {
   } =
     useContext(AppContext);
 
-  const [mode, setMode] = useState<'map' | 'feed' | 'tree' | 'subfeed'>('map');
+  const [mode, setMode] = useState<'feed' | 'tree' | 'subfeed'>('tree');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [fetchStartHeight, setFetchStartHeight] = useState<number>(0);
   const [canLoadMore, setCanLoadMore] = useState<boolean>(true);
   const [focusHandoff, setFocusHandoff] = useState<FeedHandoff | null>(null);
   const [subFeedContext, setSubFeedContext] = useState<LeafSelection | null>(null);
   const [peekGraphKey, setPeekGraphKey] = useState<string>('/');
-  const [selectedLocation, setSelectedLocation] = useState<OpenLocation | null>(null);
   const whichKey = useMemo(() => toDisplayPath(peekGraphKey), [peekGraphKey]);
   const clickableSegments = useMemo(() => buildPathSegments(whichKey), [whichKey]);
+  const rootPlusCodes = useMemo(() => {
+    if (!graph?.nodes?.length) {
+      return [];
+    }
+
+    const uniqueCodes = new Set<string>();
+    graph.nodes.forEach((node) => {
+      const firstSegment = toDisplayPath(node.pubkey).split('/').filter(Boolean)[0];
+      if (firstSegment && PLUS_CODE_PATTERN.test(firstSegment)) {
+        uniqueCodes.add(firstSegment.toUpperCase());
+      }
+    });
+    return [...uniqueCodes].sort();
+  }, [graph?.nodes]);
 
   const fetchTransactions = useCallback((
     startHeight: number,
@@ -202,37 +238,12 @@ const Explore = () => {
       tools={[]}
       renderBody={() => (
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, padding: 12, gap: 12 }}>
-          {mode === 'map' && (
-            <>
-              <div style={{ border: '1px solid var(--ion-color-step-200)', borderRadius: 12, overflow: 'hidden', minHeight: 260 }}>
-                <iframe
-                  title="Open location world map"
-                  src="https://www.openstreetmap.org/export/embed.html?bbox=-180%2C-60%2C180%2C80&layer=mapnik"
-                  style={{ width: '100%', height: 280, border: 0 }}
-                />
-              </div>
-              <IonText color="medium">Select a location to open details and its plus code.</IonText>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-                {OPEN_LOCATIONS.map((location) => (
-                  <IonCard button key={location.plusCode} onClick={() => setSelectedLocation(location)}>
-                    <IonCardHeader>
-                      <IonCardSubtitle>{location.plusCode}</IonCardSubtitle>
-                      <IonCardTitle>{location.name}</IonCardTitle>
-                    </IonCardHeader>
-                    <IonCardContent>
-                      {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
-                    </IonCardContent>
-                  </IonCard>
-                ))}
-              </div>
-              <IonButton onClick={() => setMode('tree')}>Open Explorer</IonButton>
-            </>
-          )}
-
-          {mode !== 'map' && !!whichKey && (
+          <div style={{ position: 'sticky', top: 0, zIndex: 25, background: 'var(--ion-background-color)', paddingBottom: 8 }}>
+            <MapOverview plusCodes={rootPlusCodes} />
+          </div>
+          {!!whichKey && (
             <>
               <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--ion-background-color)', borderBottom: '1px solid var(--ion-color-step-150)', padding: '8px 0', marginBottom: 8 }}>
-                <IonButton size="small" fill="clear" onClick={() => setMode('map')}>Back to Map</IonButton>
                 <div style={{ fontFamily: 'monospace, monospace', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                   <button type="button" onClick={() => { setPeekGraphKey('/'); setSubFeedContext(null); if (mode !== 'tree') { setMode('tree'); } }} style={{ border: 'none', background: 'transparent', color: 'var(--ion-color-primary)', textDecoration: 'underline' }}>..</button>
                   <code>/</code>
@@ -250,19 +261,6 @@ const Explore = () => {
             </>
           )}
 
-          <IonModal isOpen={!!selectedLocation} onDidDismiss={() => setSelectedLocation(null)}>
-            <PageShell
-              onDismissModal={() => setSelectedLocation(null)}
-              renderBody={() => (
-                <div style={{ padding: 16 }}>
-                  <h2>{selectedLocation?.name}</h2>
-                  <p><strong>Plus code:</strong> {selectedLocation?.plusCode}</p>
-                  <p><strong>Coordinates:</strong> {selectedLocation?.lat}, {selectedLocation?.lng}</p>
-                  <p>{selectedLocation?.notes}</p>
-                </div>
-              )}
-            />
-          </IonModal>
         </div>
       )}
     />
