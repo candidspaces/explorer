@@ -21,15 +21,22 @@ const toDisplayPath = (value: string) => {
 
 const buildPathSegments = (value: string) => {
   const normalized = toDisplayPath(value);
-  if (normalized === '/') {
+  if (normalized === '/' || normalized.includes('//')) {
     return [];
   }
 
-  const parts = normalized.split('/').filter(Boolean);
-  let currentPath = '/';
+  const isAbsolute = normalized.startsWith('/');
+  const trimmed = normalized.replace(/\/$/, '');
+  const parts = (isAbsolute ? trimmed.slice(1) : trimmed).split('/').filter(Boolean);
+  let currentPath = isAbsolute ? '/' : '';
 
-  return parts.map((segment) => {
-    currentPath = `${currentPath}${segment}/`;
+  return parts.map((segment, index) => {
+    if (isAbsolute) {
+      currentPath = `${currentPath}${segment}/`;
+    } else {
+      currentPath = index === 0 ? segment : `${currentPath}/${segment}`;
+    }
+
     return {
       label: segment,
       value: currentPath,
