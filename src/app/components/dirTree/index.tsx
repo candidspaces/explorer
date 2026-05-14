@@ -33,25 +33,47 @@ export interface LeafSelection {
   txId: string;
 }
 
-const isValidAbsolutePath = (value?: string) => {
-  if (!value || !value.startsWith('/')) {
-    return false;
+const PLUS_CODE_PATTERN = /^[23456789CFGHJMPQRVWX]{6,8}\+[23456789CFGHJMPQRVWX]{2,3}$/i;
+
+const hasRepeatedSlashes = (value: string) => /\/{2,}/.test(value);
+
+const parsePathSegments = (value?: string) => {
+  if (!value || value.includes('\0') || hasRepeatedSlashes(value)) {
+    return null;
   }
 
   if (value === '/') {
-    return true;
+    return [];
   }
 
-  return !value.includes('\0') && !value.includes('//');
+  if (value.startsWith('/')) {
+    const pathWithoutRoot = value.slice(1).replace(/\/$/, '');
+    if (!pathWithoutRoot) {
+      return [];
+    }
+
+    return pathWithoutRoot.split('/');
+  }
+
+  const normalized = value.replace(/\/$/, '');
+  const parts = normalized.split('/');
+
+  if (!PLUS_CODE_PATTERN.test(parts[0])) {
+    return null;
+  }
+
+  return parts;
 };
+
+const isSupportedPath = (value?: string) => parsePathSegments(value) !== null;
 
 const pathLeafName = (value: string) => {
   if (value === '/') {
     return '/';
   }
 
-  const parts = value.split('/').filter(Boolean);
-  return parts.at(-1) ?? value;
+  const parts = parsePathSegments(value);
+  return parts?.at(-1) ?? value;
 };
 
 const trimPubkeyDisplay = (value: string) => {
@@ -186,7 +208,7 @@ function DirTree({
   const initialNode = useMemo(() => {
     const displayKey = toDisplayPath(forKey);
     const node = nodes.find((n) => toDisplayPath(n.pubkey) === displayKey);
-    return node && isValidAbsolutePath(toDisplayPath(node.pubkey)) ? node : null;
+    return node && isSupportedPath(toDisplayPath(node.pubkey)) ? node : null;
   }, [nodes, forKey]);
 
   useEffect(() => {
@@ -282,7 +304,7 @@ function DirTree({
 
     const applicableLinks = links.filter((link) => {
       const targetNode = nodes.find((candidate) => candidate.id === link.target);
-      return isValidAbsolutePath(targetNode?.pubkey);
+      return isSupportedPath(toDisplayPath(targetNode?.pubkey ?? ""));
     });
 
     const applicableNodeIds = new Set<number>([
