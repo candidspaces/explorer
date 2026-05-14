@@ -19,15 +19,28 @@ const toDisplayPath = (value: string) => {
   return trimmedValue || '/';
 };
 
+const hasRepeatedSlashes = (value: string) => /\/{2,}/.test(value);
+
+const getPathSegments = (value: string) => {
+  if (value === '/' || hasRepeatedSlashes(value)) {
+    return null;
+  }
+
+  const isAbsolute = value.startsWith('/');
+  const trimmed = value.replace(/\/$/, '');
+  const parts = (isAbsolute ? trimmed.slice(1) : trimmed).split('/').filter(Boolean);
+
+  return { isAbsolute, parts };
+};
+
 const buildPathSegments = (value: string) => {
   const normalized = toDisplayPath(value);
-  if (normalized === '/' || normalized.includes('//')) {
+  const parsed = getPathSegments(normalized);
+  if (!parsed) {
     return [];
   }
 
-  const isAbsolute = normalized.startsWith('/');
-  const trimmed = normalized.replace(/\/$/, '');
-  const parts = (isAbsolute ? trimmed.slice(1) : trimmed).split('/').filter(Boolean);
+  const { isAbsolute, parts } = parsed;
   let currentPath = isAbsolute ? '/' : '';
 
   return parts.map((segment, index) => {
@@ -108,7 +121,8 @@ const Explore = () => {
 
     const uniqueCodes = new Set<string>();
     graph.nodes.forEach((node) => {
-      const firstSegment = toDisplayPath(node.pubkey).split('/').filter(Boolean)[0];
+      const parsed = getPathSegments(toDisplayPath(node.pubkey));
+      const firstSegment = parsed?.parts[0];
       if (firstSegment && PLUS_CODE_PATTERN.test(firstSegment)) {
         uniqueCodes.add(firstSegment.toUpperCase());
       }

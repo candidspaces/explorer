@@ -35,8 +35,10 @@ export interface LeafSelection {
 
 const PLUS_CODE_PATTERN = /^[23456789CFGHJMPQRVWX]{6,8}\+[23456789CFGHJMPQRVWX]{2,3}$/i;
 
+const hasRepeatedSlashes = (value: string) => /\/{2,}/.test(value);
+
 const parsePathSegments = (value?: string) => {
-  if (!value || value.includes('\0') || value.includes('//')) {
+  if (!value || value.includes('\0') || hasRepeatedSlashes(value)) {
     return null;
   }
 
